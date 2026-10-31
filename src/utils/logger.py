@@ -38,6 +38,13 @@ def register_log_secret(secret: str) -> None:
 
 def setup_logger(log_level: str = "INFO", log_dir: str = "logs") -> logging.Logger:
     """Configure structured logging to console and rotating file."""
+    # Ensure Windows console supports UTF-8 characters cleanly
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     logger = logging.getLogger("LegendBot")
     level = getattr(logging, log_level.upper(), logging.INFO)
     logger.setLevel(level)
