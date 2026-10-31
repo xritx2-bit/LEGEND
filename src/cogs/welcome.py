@@ -203,8 +203,10 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
         title="(Optional) Embed title. Supports: {user}, {username}, {server}, {count}",
         description="(Optional) Embed body text. Supports variables",
         color="(Optional) Hex color code (e.g. #5865F2, #FF0000)",
-        thumbnail_url="(Optional) Direct HTTPS image URL for embed thumbnail",
-        image_url="(Optional) Direct HTTPS banner image URL",
+        thumbnail_url="(Optional) Image link (direct URL, Pinterest, Imgur, etc.)",
+        thumbnail_file="(Optional) Upload a thumbnail image file directly from your device",
+        image_url="(Optional) Banner image link (direct URL, Pinterest, Imgur, etc.)",
+        image_file="(Optional) Upload a banner image file directly from your device",
         footer="(Optional) Embed footer text. Supports: {count}",
     )
     @is_guild_admin()
@@ -215,11 +217,25 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
         description: Optional[str] = None,
         color: Optional[str] = None,
         thumbnail_url: Optional[str] = None,
+        thumbnail_file: Optional[discord.Attachment] = None,
         image_url: Optional[str] = None,
+        image_file: Optional[discord.Attachment] = None,
         footer: Optional[str] = None,
     ) -> None:
         """Configure welcome embed attributes."""
         await interaction.response.defer(ephemeral=True)
+
+        logger.info(
+            "welcome_embed called by %s (guild: %s): title=%r, color=%r, thumb_url=%r, thumb_file=%r, img_url=%r, img_file=%r",
+            interaction.user.name,
+            interaction.guild_id,
+            title,
+            color,
+            thumbnail_url,
+            thumbnail_file.filename if thumbnail_file else None,
+            image_url,
+            image_file.filename if image_file else None,
+        )
 
         updates = {}
 
@@ -258,26 +274,52 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
                 return
             updates["welcome_embed_color"] = color.upper()
 
-        if thumbnail_url:
+        # Handle Thumbnail (Direct File upload takes priority over URL)
+        if thumbnail_file:
+            if thumbnail_file.content_type and not thumbnail_file.content_type.startswith("image/"):
+                embed = create_error_embed("Invalid Thumbnail File", "The uploaded thumbnail file must be an image (PNG, JPG, WEBP, GIF).")
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            updates["welcome_thumbnail_url"] = thumbnail_file.url
+        elif thumbnail_url:
             clean_t = thumbnail_url.strip()
             if clean_t.lower() in {"none", "remove", "clear", "reset", "delete"}:
                 updates["welcome_thumbnail_url"] = None
             else:
                 resolved_thumb = await resolve_image_url(clean_t)
                 if not validate_url(resolved_thumb):
-                    embed = create_error_embed("Invalid Thumbnail URL", "Could not parse this image link. Please provide a direct image URL, Pinterest link, or Imgur link.")
+                    embed = create_error_embed(
+                        "Invalid Thumbnail Image",
+                        "Could not parse this image link.\n\n"
+                        "💡 **2 Easy Ways to Fix This:**\n"
+                        "1. **Direct Upload (Easiest)**: Run `/welcome embed` and attach the image directly via the `thumbnail_file` option!\n"
+                        "2. **Direct Image Link**: On Pinterest or Google, right-click the image and select **'Copy image address'** (starts with `i.pinimg.com`), then paste that into `thumbnail_url`."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
                 updates["welcome_thumbnail_url"] = resolved_thumb
 
-        if image_url:
+        # Handle Banner Image (Direct File upload takes priority over URL)
+        if image_file:
+            if image_file.content_type and not image_file.content_type.startswith("image/"):
+                embed = create_error_embed("Invalid Banner File", "The uploaded banner file must be an image (PNG, JPG, WEBP, GIF).")
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+            updates["welcome_image_url"] = image_file.url
+        elif image_url:
             clean_i = image_url.strip()
             if clean_i.lower() in {"none", "remove", "clear", "reset", "delete"}:
                 updates["welcome_image_url"] = None
             else:
                 resolved_img = await resolve_image_url(clean_i)
                 if not validate_url(resolved_img):
-                    embed = create_error_embed("Invalid Banner URL", "Could not parse this image link. Please provide a direct image URL, Pinterest link, or Imgur link.")
+                    embed = create_error_embed(
+                        "Invalid Banner Image",
+                        "Could not parse this image link.\n\n"
+                        "💡 **2 Easy Ways to Fix This:**\n"
+                        "1. **Direct Upload (Easiest)**: Run `/welcome embed` and attach the image directly via the `image_file` option!\n"
+                        "2. **Direct Image Link**: On Pinterest or Google, right-click the image and select **'Copy image address'** (starts with `i.pinimg.com`), then paste that into `image_url`."
+                    )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
                 updates["welcome_image_url"] = resolved_img

@@ -141,21 +141,41 @@ class EditWelcomeEmbedModal(ui.Modal, title="Customize Welcome Embed"):
 
         img_val = self.embed_image.value.strip()
         if img_val:
-            resolved_img = await resolve_image_url(img_val)
-            if not validate_url(resolved_img):
-                embed = create_error_embed("Invalid Banner URL", "Please provide a valid image link (Pinterest, Imgur, direct link, etc.).")
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-            updates["welcome_image_url"] = resolved_img
+            if img_val.lower() in {"none", "remove", "clear", "reset", "delete"}:
+                updates["welcome_image_url"] = None
+            else:
+                resolved_img = await resolve_image_url(img_val)
+                if not validate_url(resolved_img):
+                    embed = create_error_embed(
+                        "Invalid Banner Image",
+                        "Could not parse this image link.\n\n"
+                        "💡 **Tips:**\n"
+                        "• Use a direct image URL (.png, .jpg, .webp, .gif) or Imgur/Discord link.\n"
+                        "• For Pinterest: right-click the image and choose **'Copy image address'** (starts with `i.pinimg.com`).\n"
+                        "• Or run `/welcome embed` with `image_file` to upload your image file directly!"
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+                updates["welcome_image_url"] = resolved_img
 
         thumb_val = self.embed_thumb.value.strip()
         if thumb_val:
-            resolved_thumb = await resolve_image_url(thumb_val)
-            if not validate_url(resolved_thumb):
-                embed = create_error_embed("Invalid Thumbnail URL", "Please provide a valid image link (Pinterest, Imgur, direct link, etc.).")
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                return
-            updates["welcome_thumbnail_url"] = resolved_thumb
+            if thumb_val.lower() in {"none", "remove", "clear", "reset", "delete"}:
+                updates["welcome_thumbnail_url"] = None
+            else:
+                resolved_thumb = await resolve_image_url(thumb_val)
+                if not validate_url(resolved_thumb):
+                    embed = create_error_embed(
+                        "Invalid Thumbnail Image",
+                        "Could not parse this image link.\n\n"
+                        "💡 **Tips:**\n"
+                        "• Use a direct image URL (.png, .jpg, .webp, .gif) or Imgur/Discord link.\n"
+                        "• For Pinterest: right-click the image and choose **'Copy image address'** (starts with `i.pinimg.com`).\n"
+                        "• Or run `/welcome embed` with `thumbnail_file` to upload your image file directly!"
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+                updates["welcome_thumbnail_url"] = resolved_thumb
 
         if updates:
             await self.bot.db.update_guild_settings(interaction.guild_id, **updates)
