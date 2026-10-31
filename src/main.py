@@ -26,6 +26,7 @@ logger = logging.getLogger("LegendBot")
 # List of extension cogs to load at startup
 INITIAL_EXTENSIONS: List[str] = [
     "src.cogs.general",
+    "src.cogs.youtube",
 ]
 
 

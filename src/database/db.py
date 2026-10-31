@@ -120,6 +120,60 @@ class DatabaseManager:
         return await self.get_guild_settings(guild_id)
 
     # -------------------------------------------------------------
+    # YouTube Channels Operations
+    # -------------------------------------------------------------
+
+    async def upsert_youtube_channel(
+        self,
+        guild_id: int,
+        channel_id: str,
+        channel_name: Optional[str] = None,
+    ) -> None:
+        """Add or update the configured YouTube channel for a guild."""
+        conn = await self.connect()
+        query = """
+            INSERT INTO youtube_channels (guild_id, channel_id, channel_name, is_active)
+            VALUES (?, ?, ?, 1)
+            ON CONFLICT(guild_id, channel_id) DO UPDATE SET
+                channel_name = excluded.channel_name,
+                is_active = 1;
+        """
+        await conn.execute(query, (guild_id, channel_id, channel_name))
+        await conn.commit()
+
+    async def get_youtube_channel(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Get the active monitored YouTube channel for a guild."""
+        conn = await self.connect()
+        query = "SELECT * FROM youtube_channels WHERE guild_id = ? AND is_active = 1 LIMIT 1;"
+        async with conn.execute(query, (guild_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    async def update_youtube_last_checked(self, guild_id: int, channel_id: str) -> None:
+        """Update the last_checked_at timestamp for a channel."""
+        conn = await self.connect()
+        query = """
+            UPDATE youtube_channels
+            SET last_checked_at = (datetime('now'))
+            WHERE guild_id = ? AND channel_id = ?;
+        """
+        await conn.execute(query, (guild_id, channel_id))
+        await conn.commit()
+
+    async def get_last_announced_broadcast(self, guild_id: int) -> Optional[Dict[str, Any]]:
+        """Fetch the most recently notified broadcast for a guild."""
+        conn = await self.connect()
+        query = """
+            SELECT * FROM notified_broadcasts
+            WHERE guild_id = ?
+            ORDER BY notified_at DESC, rowid DESC
+            LIMIT 1;
+        """
+        async with conn.execute(query, (guild_id,)) as cursor:
+            row = await cursor.fetchone()
+            return dict(row) if row else None
+
+    # -------------------------------------------------------------
     # Broadcast Tracking Operations
     # -------------------------------------------------------------
 

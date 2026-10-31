@@ -82,3 +82,31 @@ def create_error_embed(
         embed.set_footer(text=footer)
     return embed
 
+
+def create_live_notification_embed(
+    streamer_name: str,
+    stream_title: str,
+    stream_url: str,
+    thumbnail_url: str,
+    game_name: Optional[str] = None,
+) -> discord.Embed:
+    """Build a rich, high-visibility embed for YouTube livestream alerts."""
+    embed = discord.Embed(
+        title=f"🔴 {stream_title}",
+        url=stream_url,
+        description=f"**{streamer_name}** has just started streaming on YouTube!\n[Click here to watch the stream!]({stream_url})",
+        color=COLOR_YOUTUBE,
+        timestamp=discord.utils.utcnow(),
+    )
+
+    embed.add_field(name="👤 Streamer", value=f"`{streamer_name}`", inline=True)
+    if game_name:
+        embed.add_field(name="🎮 Game / Category", value=f"`{game_name}`", inline=True)
+
+    if thumbnail_url:
+        embed.set_image(url=thumbnail_url)
+
+    embed.set_footer(text="YouTube Livestream Alert • Legend Bot")
+    return embed
+
+
