@@ -78,45 +78,49 @@ def test_parse_broadcast_snippet_fallback_thumbnail() -> None:
 async def test_fetch_active_livestream_none_found() -> None:
     """Verify fetch_active_livestream returns None when search returns empty items."""
     service = YouTubeService(api_key="dummy_key", default_channel_id="UC_NO_STREAM")
-
-    with patch.object(service, "_request", new_callable=AsyncMock) as mock_request:
-        mock_request.return_value = {"items": []}
-        result = await service.fetch_active_livestream()
-        assert result is None
-        mock_request.assert_called_once()
+    try:
+        with patch.object(service, "_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = {"items": []}
+            result = await service.fetch_active_livestream()
+            assert result is None
+            mock_request.assert_called_once()
+    finally:
+        await service.close()
 
 
 @pytest.mark.asyncio
 async def test_fetch_active_livestream_found() -> None:
     """Verify fetch_active_livestream properly constructs BroadcastMetadata when live video exists."""
     service = YouTubeService(api_key="dummy_key", default_channel_id="UC_IS_STREAMING")
-
-    sample_api_response = {
-        "items": [
-            {
-                "id": {"videoId": "live_video_777"},
-                "snippet": {
-                    "channelId": "UC_IS_STREAMING",
-                    "channelTitle": "Pro Gamer",
-                    "title": "🔴 Sub Games & Tournaments",
-                    "publishedAt": "2026-10-31T10:00:00Z",
-                    "thumbnails": {
-                        "high": {"url": "https://img.youtube.com/vi/live_video_777/hqdefault.jpg"}
+    try:
+        sample_api_response = {
+            "items": [
+                {
+                    "id": {"videoId": "live_video_777"},
+                    "snippet": {
+                        "channelId": "UC_IS_STREAMING",
+                        "channelTitle": "Pro Gamer",
+                        "title": "🔴 Sub Games & Tournaments",
+                        "publishedAt": "2026-10-31T10:00:00Z",
+                        "thumbnails": {
+                            "high": {"url": "https://img.youtube.com/vi/live_video_777/hqdefault.jpg"}
+                        },
                     },
-                },
-            }
-        ]
-    }
+                }
+            ]
+        }
 
-    with patch.object(service, "_request", new_callable=AsyncMock) as mock_request:
-        mock_request.return_value = sample_api_response
-        result = await service.fetch_active_livestream()
+        with patch.object(service, "_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = sample_api_response
+            result = await service.fetch_active_livestream()
 
-        assert result is not None
-        assert result.broadcast_id == "live_video_777"
-        assert result.title == "🔴 Sub Games & Tournaments"
-        assert result.channel_title == "Pro Gamer"
-        assert result.url == "https://www.youtube.com/watch?v=live_video_777"
+            assert result is not None
+            assert result.broadcast_id == "live_video_777"
+            assert result.title == "🔴 Sub Games & Tournaments"
+            assert result.channel_title == "Pro Gamer"
+            assert result.url == "https://www.youtube.com/watch?v=live_video_777"
+    finally:
+        await service.close()
 
 
 @pytest.mark.asyncio
@@ -170,31 +174,33 @@ async def test_invalid_api_key_error() -> None:
 async def test_channel_details_parsing() -> None:
     """Verify channel details extraction."""
     service = YouTubeService(api_key="dummy_key")
-
-    mock_channel_response = {
-        "items": [
-            {
-                "snippet": {
-                    "title": "Legendary Gaming",
-                    "description": "Welcome to my gaming channel!",
-                    "customUrl": "@legendarygaming",
-                    "thumbnails": {
-                        "high": {"url": "https://yt3.ggpht.com/avatar_high.jpg"}
+    try:
+        mock_channel_response = {
+            "items": [
+                {
+                    "snippet": {
+                        "title": "Legendary Gaming",
+                        "description": "Welcome to my gaming channel!",
+                        "customUrl": "@legendarygaming",
+                        "thumbnails": {
+                            "high": {"url": "https://yt3.ggpht.com/avatar_high.jpg"}
+                        },
                     },
-                },
-                "statistics": {
-                    "subscriberCount": "150000",
-                    "videoCount": "420",
-                },
-            }
-        ]
-    }
+                    "statistics": {
+                        "subscriberCount": "150000",
+                        "videoCount": "420",
+                    },
+                }
+            ]
+        }
 
-    with patch.object(service, "_request", new_callable=AsyncMock) as mock_request:
-        mock_request.return_value = mock_channel_response
-        details = await service.fetch_channel_details("UC_LEGEND")
+        with patch.object(service, "_request", new_callable=AsyncMock) as mock_request:
+            mock_request.return_value = mock_channel_response
+            details = await service.fetch_channel_details("UC_LEGEND")
 
-        assert details["title"] == "Legendary Gaming"
-        assert details["subscriber_count"] == "150000"
-        assert details["avatar_url"] == "https://yt3.ggpht.com/avatar_high.jpg"
-        assert details["custom_url"] == "@legendarygaming"
+            assert details["title"] == "Legendary Gaming"
+            assert details["subscriber_count"] == "150000"
+            assert details["avatar_url"] == "https://yt3.ggpht.com/avatar_high.jpg"
+            assert details["custom_url"] == "@legendarygaming"
+    finally:
+        await service.close()

@@ -2,16 +2,20 @@
 
 import platform
 import time
+from typing import TYPE_CHECKING
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+if TYPE_CHECKING:
+    from src.main import LegendBot
 
 
 class GeneralCog(commands.Cog, name="General"):
     """Core diagnostic and informational slash commands."""
 
     def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
+        self.bot: "LegendBot" = bot  # type: ignore[assignment]
         self.start_time = time.time()
 
     @app_commands.command(name="ping", description="Check the bot's response time and system latency.")

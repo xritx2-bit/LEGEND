@@ -2,10 +2,13 @@
 
 import asyncio
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
+
+if TYPE_CHECKING:
+    from src.main import LegendBot
 
 from src.services.youtube_service import (
     BroadcastMetadata,
@@ -34,26 +37,25 @@ class YouTubeCog(commands.GroupCog, group_name="live", group_description="YouTub
     """Cog handling YouTube livestream monitoring, alerts, and /live slash commands."""
 
     def __init__(self, bot: commands.Bot) -> None:
-        self.bot = bot
+        self.bot: "LegendBot" = bot  # type: ignore[assignment]
         self.yt_service = YouTubeService(
-            api_key=bot.config.youtube_api_key,
-            default_channel_id=bot.config.youtube_channel_id,
+            api_key=self.bot.config.youtube_api_key,
+            default_channel_id=self.bot.config.youtube_channel_id,
         )
-        self.poll_interval = bot.config.youtube_poll_interval
+        self.poll_interval = self.bot.config.youtube_poll_interval
 
         # Start background polling loop if YouTube API is configured
-        if bot.config.is_youtube_configured:
+        if self.bot.config.is_youtube_configured:
             self.live_monitor_loop.change_interval(seconds=self.poll_interval)
             self.live_monitor_loop.start()
             logger.info("YouTube livestream background polling started (interval: %ds).", self.poll_interval)
         else:
             logger.warning("YouTube API is not fully configured in .env. Live polling loop is idle.")
 
-    def cog_unload(self) -> None:
+    async def cog_unload(self) -> None:
         """Clean up when cog is unloaded."""
         self.live_monitor_loop.cancel()
-        asyncio_task = asyncio.create_task(self.yt_service.close())
-        asyncio_task.add_done_callback(lambda _: None)
+        await self.yt_service.close()
 
     # -------------------------------------------------------------
     # Background Polling Loop

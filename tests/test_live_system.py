@@ -90,3 +90,4 @@ async def test_duplicate_prevention_logic(test_db: DatabaseManager) -> None:
 
     # Subsequent check detects duplicate
     assert await test_db.is_broadcast_notified(broadcast_id)
+

@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 import discord
+from discord import app_commands
 from discord.ext import commands
 
 from src.config import Config, redact_secret
