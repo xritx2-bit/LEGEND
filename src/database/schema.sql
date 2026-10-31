@@ -42,3 +42,8 @@ CREATE TABLE IF NOT EXISTS notified_broadcasts (
 CREATE INDEX IF NOT EXISTS idx_broadcast_channel ON notified_broadcasts (channel_id);
 CREATE INDEX IF NOT EXISTS idx_guild_youtube ON youtube_channels (guild_id);
 
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+

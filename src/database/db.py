@@ -8,6 +8,9 @@ import aiosqlite
 logger = logging.getLogger("LegendBot.Database")
 
 
+CURRENT_SCHEMA_VERSION = 1
+
+
 class DatabaseManager:
     """Manages SQLite database connections and queries asynchronously."""
 
@@ -32,7 +35,7 @@ class DatabaseManager:
         return self._connection
 
     async def initialize_schema(self, schema_file: Optional[Path] = None) -> None:
-        """Run initial database schema creation."""
+        """Run initial database schema creation and record schema version."""
         conn = await self.connect()
         if schema_file is None:
             schema_file = Path(__file__).parent / "schema.sql"
@@ -42,8 +45,72 @@ class DatabaseManager:
 
         schema_sql = schema_file.read_text(encoding="utf-8")
         await conn.executescript(schema_sql)
+
+        # Record schema version
+        await conn.execute(
+            "INSERT OR IGNORE INTO schema_version (version) VALUES (?);",
+            (CURRENT_SCHEMA_VERSION,),
+        )
         await conn.commit()
-        logger.info("Database schema initialized successfully at %s", self.db_path)
+        logger.info("Database schema initialized (version %d) at %s", CURRENT_SCHEMA_VERSION, self.db_path)
+
+    async def get_schema_version(self) -> int:
+        """Return the current database schema version."""
+        conn = await self.connect()
+        async with conn.execute("SELECT MAX(version) AS ver FROM schema_version;") as cursor:
+            row = await cursor.fetchone()
+            return row["ver"] if row and row["ver"] is not None else 0
+
+    async def create_database_backup(self, backup_dir: Optional[Path] = None) -> Path:
+        """Create a safe, atomic online SQLite database snapshot using VACUUM INTO."""
+        if backup_dir is None:
+            backup_dir = self.db_path.parent / "backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+
+        from datetime import datetime, timezone
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        backup_path = backup_dir / f"backup_{timestamp}.db"
+
+        conn = await self.connect()
+        # Use SQLite VACUUM INTO for consistent online backup without locks
+        vacuum_sql = f"VACUUM INTO '{backup_path.as_posix()}';"
+        await conn.execute(vacuum_sql)
+        logger.info("Atomic database backup created at %s", backup_path)
+        return backup_path
+
+    async def export_guild_backup(self, guild_id: int) -> Dict[str, Any]:
+        """Export complete configuration and channel mappings for a guild into a dictionary."""
+        settings = await self.get_guild_settings(guild_id)
+        yt_channel = await self.get_youtube_channel(guild_id)
+
+        return {
+            "version": CURRENT_SCHEMA_VERSION,
+            "guild_id": guild_id,
+            "settings": settings,
+            "youtube_channel": yt_channel,
+        }
+
+    async def restore_guild_backup(self, guild_id: int, backup_data: Dict[str, Any]) -> bool:
+        """Restore configuration for a guild from a validated backup dictionary."""
+        settings = backup_data.get("settings")
+        if not isinstance(settings, dict):
+            return False
+
+        # Apply settings (excluding guild_id from kwargs to avoid duplicates)
+        clean_settings = {k: v for k, v in settings.items() if k != "guild_id"}
+        await self.update_guild_settings(guild_id, **clean_settings)
+
+        # Restore youtube channel mapping if present
+        yt = backup_data.get("youtube_channel")
+        if isinstance(yt, dict) and yt.get("channel_id"):
+            await self.upsert_youtube_channel(
+                guild_id=guild_id,
+                channel_id=yt["channel_id"],
+                channel_name=yt.get("channel_name"),
+            )
+
+        logger.info("Guild %d configuration successfully restored from backup.", guild_id)
+        return True
 
     async def close(self) -> None:
         """Safely close active database connection."""
