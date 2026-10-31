@@ -24,3 +24,4 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "`n[Notice] Bot stopped. Check logs/bot.log for detailed output." -ForegroundColor Yellow
     Pause
 }
+

@@ -22,3 +22,4 @@ if %ERRORLEVEL% NEQ 0 (
     echo Bot stopped with an error. Check logs\bot.log for details.
     pause
 )
+
