@@ -10,6 +10,7 @@ from src.ui.embeds import (
     create_live_notification_embed,
     create_success_embed,
     create_warning_embed,
+    create_welcome_embed,
 )
 
 __all__ = [
@@ -23,5 +24,6 @@ __all__ = [
     "create_live_notification_embed",
     "create_success_embed",
     "create_warning_embed",
+    "create_welcome_embed",
 ]
 

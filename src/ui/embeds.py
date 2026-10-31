@@ -110,3 +110,28 @@ def create_live_notification_embed(
     return embed
 
 
+def create_welcome_embed(
+    title: str,
+    description: str,
+    color_int: int = 0x5865F2,
+    footer_text: Optional[str] = None,
+    thumbnail_url: Optional[str] = None,
+    image_url: Optional[str] = None,
+) -> discord.Embed:
+    """Build a rich welcome embed customized with the server's branding."""
+    embed = discord.Embed(
+        title=title,
+        description=description,
+        color=discord.Color(color_int),
+        timestamp=discord.utils.utcnow(),
+    )
+    if thumbnail_url:
+        embed.set_thumbnail(url=thumbnail_url)
+    if image_url:
+        embed.set_image(url=image_url)
+    if footer_text:
+        embed.set_footer(text=footer_text)
+    return embed
+
+
+

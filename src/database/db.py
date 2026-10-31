@@ -119,6 +119,27 @@ class DatabaseManager:
 
         return await self.get_guild_settings(guild_id)
 
+    async def reset_welcome_settings(self, guild_id: int) -> Dict[str, Any]:
+        """Reset welcome settings for a guild back to their initial defaults."""
+        conn = await self.connect()
+        query = """
+            UPDATE guild_settings
+            SET welcome_enabled = 0,
+                welcome_channel_id = NULL,
+                welcome_message = 'Welcome to {server}, {user}! We are glad you are here.',
+                welcome_embed_title = 'Welcome to the Community!',
+                welcome_embed_description = 'Hey {user}, welcome! Check out the channels and enjoy your stay.',
+                welcome_embed_color = '#5865F2',
+                welcome_thumbnail_url = NULL,
+                welcome_image_url = NULL,
+                welcome_footer = 'Member #{count}',
+                updated_at = (datetime('now'))
+            WHERE guild_id = ?;
+        """
+        await conn.execute(query, (guild_id,))
+        await conn.commit()
+        return await self.get_guild_settings(guild_id)
+
     # -------------------------------------------------------------
     # YouTube Channels Operations
     # -------------------------------------------------------------
