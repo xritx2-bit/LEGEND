@@ -9,7 +9,7 @@ HEX_COLOR_REGEX = re.compile(r"^#?([A-Fa-f0-9]{6})$")
 TEMPLATE_TOKEN_REGEX = re.compile(r"\{([a-zA-Z0-9_]+)\}")
 
 PINTEREST_IMG_REGEX = re.compile(
-    r"https://i\.pinimg\.com/(?:originals|736x|564x)/[a-zA-Z0-9_\/]+\.(?:jpg|png|jpeg|webp|gif)",
+    r"https://i\.pinimg\.com/(?:originals|736x|564x|474x|236x)/[a-zA-Z0-9_\/]+\.(?:jpg|png|jpeg|webp|gif)",
     re.IGNORECASE,
 )
 GDRIVE_FILE_REGEX = re.compile(r"drive\.google\.com/file/d/([a-zA-Z0-9_-]+)", re.IGNORECASE)
@@ -17,10 +17,25 @@ IMGUR_PAGE_REGEX = re.compile(r"https?://(?:www\.)?imgur\.com/([a-zA-Z0-9]+)(?:\
 
 
 def clean_url(url: str) -> str:
-    """Clean user-provided URL removing surrounding brackets or quotes."""
-    if not url:
+    """Clean user-provided URL removing surrounding text/brackets and prepending https if missing."""
+    if not url or not isinstance(url, str):
         return ""
-    return url.strip().strip("<>\"' \t\r\n")
+
+    raw = url.strip()
+
+    # Extract embedded http/https URL if user pasted mobile share text
+    embedded_match = re.search(r"https?://[^\s<>\"']+", raw)
+    if embedded_match:
+        return embedded_match.group(0).rstrip(".,;)")
+
+    # Clean surrounding brackets or quotes
+    cleaned = raw.strip("<>\"' \t\r\n").rstrip(".,;)")
+    # If user provided a domain/path without scheme (e.g. pin.it/... or pinterest.com/...)
+    if cleaned and "://" not in cleaned:
+        if "." in cleaned and "/" in cleaned:
+            cleaned = "https://" + cleaned
+
+    return cleaned
 
 
 async def resolve_image_url(url: str, session: Optional[aiohttp.ClientSession] = None) -> str:
@@ -51,21 +66,27 @@ async def resolve_image_url(url: str, session: Optional[aiohttp.ClientSession] =
         if session is None:
             session = aiohttp.ClientSession(
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language": "en-US,en;q=0.5",
                 }
             )
             close_session = True
 
         try:
-            async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+            async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 if resp.status == 200:
                     html = await resp.text()
                     matches = PINTEREST_IMG_REGEX.findall(html)
                     if matches:
-                        # Prefer 'originals' or '736x' resolution
+                        # Prefer 'originals'
                         for m in matches:
-                            if "originals" in m or "736x" in m:
+                            if "originals" in m:
                                 return m
+                        # Try converting 736x to originals
+                        for m in matches:
+                            if "736x" in m:
+                                return m.replace("/736x/", "/originals/")
                         return matches[0]
         except Exception:
             pass

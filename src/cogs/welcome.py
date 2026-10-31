@@ -259,20 +259,28 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
             updates["welcome_embed_color"] = color.upper()
 
         if thumbnail_url:
-            resolved_thumb = await resolve_image_url(thumbnail_url)
-            if not validate_url(resolved_thumb):
-                embed = create_error_embed("Invalid Thumbnail URL", "Please provide a valid image link (direct image, Pinterest, Imgur, etc.).")
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                return
-            updates["welcome_thumbnail_url"] = resolved_thumb
+            clean_t = thumbnail_url.strip()
+            if clean_t.lower() in {"none", "remove", "clear", "reset", "delete"}:
+                updates["welcome_thumbnail_url"] = None
+            else:
+                resolved_thumb = await resolve_image_url(clean_t)
+                if not validate_url(resolved_thumb):
+                    embed = create_error_embed("Invalid Thumbnail URL", "Could not parse this image link. Please provide a direct image URL, Pinterest link, or Imgur link.")
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    return
+                updates["welcome_thumbnail_url"] = resolved_thumb
 
         if image_url:
-            resolved_img = await resolve_image_url(image_url)
-            if not validate_url(resolved_img):
-                embed = create_error_embed("Invalid Banner URL", "Please provide a valid image link (direct image, Pinterest, Imgur, etc.).")
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                return
-            updates["welcome_image_url"] = resolved_img
+            clean_i = image_url.strip()
+            if clean_i.lower() in {"none", "remove", "clear", "reset", "delete"}:
+                updates["welcome_image_url"] = None
+            else:
+                resolved_img = await resolve_image_url(clean_i)
+                if not validate_url(resolved_img):
+                    embed = create_error_embed("Invalid Banner URL", "Could not parse this image link. Please provide a direct image URL, Pinterest link, or Imgur link.")
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    return
+                updates["welcome_image_url"] = resolved_img
 
         if not updates:
             embed = create_warning_embed("No Changes Specified", "Please provide at least one field to update.")

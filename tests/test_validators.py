@@ -107,3 +107,11 @@ async def test_resolve_image_url_direct_and_conversions() -> None:
     wrapped = "<https://i.pinimg.com/736x/12/34/56/123456.png>"
     assert await resolve_image_url(wrapped) == "https://i.pinimg.com/736x/12/34/56/123456.png"
 
+    # 6. Embedded in mobile share text
+    share_text = "Check out this art on Pinterest: https://i.pinimg.com/originals/sample.png"
+    assert await resolve_image_url(share_text) == "https://i.pinimg.com/originals/sample.png"
+
+    # 7. Domain without scheme
+    no_scheme = "i.pinimg.com/originals/no_scheme.png"
+    assert await resolve_image_url(no_scheme) == "https://i.pinimg.com/originals/no_scheme.png"
+
