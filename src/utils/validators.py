@@ -3,9 +3,77 @@
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
+import aiohttp
 
 HEX_COLOR_REGEX = re.compile(r"^#?([A-Fa-f0-9]{6})$")
 TEMPLATE_TOKEN_REGEX = re.compile(r"\{([a-zA-Z0-9_]+)\}")
+
+PINTEREST_IMG_REGEX = re.compile(
+    r"https://i\.pinimg\.com/(?:originals|736x|564x)/[a-zA-Z0-9_\/]+\.(?:jpg|png|jpeg|webp|gif)",
+    re.IGNORECASE,
+)
+GDRIVE_FILE_REGEX = re.compile(r"drive\.google\.com/file/d/([a-zA-Z0-9_-]+)", re.IGNORECASE)
+IMGUR_PAGE_REGEX = re.compile(r"https?://(?:www\.)?imgur\.com/([a-zA-Z0-9]+)(?:\.[a-zA-Z0-9]+)?$", re.IGNORECASE)
+
+
+def clean_url(url: str) -> str:
+    """Clean user-provided URL removing surrounding brackets or quotes."""
+    if not url:
+        return ""
+    return url.strip().strip("<>\"' \t\r\n")
+
+
+async def resolve_image_url(url: str, session: Optional[aiohttp.ClientSession] = None) -> str:
+    """Resolve image links from Pinterest, Imgur, Google Drive, or direct links into Discord-compatible direct image URLs."""
+    url = clean_url(url)
+    if not url:
+        return ""
+
+    # Google Drive share link -> direct view endpoint
+    gdrive_match = GDRIVE_FILE_REGEX.search(url)
+    if gdrive_match:
+        file_id = gdrive_match.group(1)
+        return f"https://drive.google.com/uc?export=view&id={file_id}"
+
+    # Imgur page link -> direct i.imgur.com link
+    imgur_match = IMGUR_PAGE_REGEX.match(url)
+    if imgur_match and not url.startswith("https://i.imgur.com/"):
+        image_id = imgur_match.group(1)
+        return f"https://i.imgur.com/{image_id}.png"
+
+    # Already a direct image or direct Pinterest CDN image (i.pinimg.com)
+    if "i.pinimg.com" in url or any(url.lower().split("?")[0].endswith(ext) for ext in [".png", ".jpg", ".jpeg", ".gif", ".webp"]):
+        return url
+
+    # Pinterest pin or shortened link (pin.it or pinterest.com/pin/...)
+    if "pinterest.com" in url or "pin.it" in url:
+        close_session = False
+        if session is None:
+            session = aiohttp.ClientSession(
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
+                }
+            )
+            close_session = True
+
+        try:
+            async with session.get(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                if resp.status == 200:
+                    html = await resp.text()
+                    matches = PINTEREST_IMG_REGEX.findall(html)
+                    if matches:
+                        # Prefer 'originals' or '736x' resolution
+                        for m in matches:
+                            if "originals" in m or "736x" in m:
+                                return m
+                        return matches[0]
+        except Exception:
+            pass
+        finally:
+            if close_session and session:
+                await session.close()
+
+    return url
 
 
 def validate_hex_color(hex_str: str) -> Tuple[bool, Optional[int]]:
@@ -30,12 +98,12 @@ def validate_hex_color(hex_str: str) -> Tuple[bool, Optional[int]]:
 
 def validate_url(url: str, require_https: bool = True) -> bool:
     """Validate whether a string is a well-formed HTTP/HTTPS URL."""
-    if not url or not isinstance(url, str):
+    cleaned = clean_url(url)
+    if not cleaned:
         return False
 
-    url = url.strip()
     try:
-        parsed = urlparse(url)
+        parsed = urlparse(cleaned)
         allowed_schemes = ("https",) if require_https else ("http", "https")
         return bool(parsed.scheme in allowed_schemes and parsed.netloc)
     except Exception:

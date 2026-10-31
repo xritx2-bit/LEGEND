@@ -16,6 +16,7 @@ from src.ui.embeds import (
 from src.utils.permissions import is_guild_admin
 from src.utils.validators import (
     render_template,
+    resolve_image_url,
     validate_hex_color,
     validate_template_placeholders,
     validate_url,
@@ -258,18 +259,20 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
             updates["welcome_embed_color"] = color.upper()
 
         if thumbnail_url:
-            if not validate_url(thumbnail_url):
-                embed = create_error_embed("Invalid Thumbnail URL", "Please provide a valid HTTPS image link.")
+            resolved_thumb = await resolve_image_url(thumbnail_url)
+            if not validate_url(resolved_thumb):
+                embed = create_error_embed("Invalid Thumbnail URL", "Please provide a valid image link (direct image, Pinterest, Imgur, etc.).")
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
-            updates["welcome_thumbnail_url"] = thumbnail_url
+            updates["welcome_thumbnail_url"] = resolved_thumb
 
         if image_url:
-            if not validate_url(image_url):
-                embed = create_error_embed("Invalid Banner URL", "Please provide a valid HTTPS image link.")
+            resolved_img = await resolve_image_url(image_url)
+            if not validate_url(resolved_img):
+                embed = create_error_embed("Invalid Banner URL", "Please provide a valid image link (direct image, Pinterest, Imgur, etc.).")
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
-            updates["welcome_image_url"] = image_url
+            updates["welcome_image_url"] = resolved_img
 
         if not updates:
             embed = create_warning_embed("No Changes Specified", "Please provide at least one field to update.")

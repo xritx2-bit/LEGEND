@@ -14,6 +14,7 @@ from src.ui.embeds import (
 )
 from src.utils.validators import (
     render_template,
+    resolve_image_url,
     validate_hex_color,
     validate_template_placeholders,
     validate_url,
@@ -63,7 +64,7 @@ class EditWelcomeMessageModal(ui.Modal, title="Edit Welcome Message Template"):
 
 
 class EditWelcomeEmbedModal(ui.Modal, title="Customize Welcome Embed"):
-    """Modal to edit welcome embed title, description, and color."""
+    """Modal to edit welcome embed title, description, color, banner, and thumbnail."""
     embed_title = ui.TextInput(
         label="Embed Title",
         style=discord.TextStyle.short,
@@ -85,6 +86,20 @@ class EditWelcomeEmbedModal(ui.Modal, title="Customize Welcome Embed"):
         required=False,
         max_length=7,
     )
+    embed_image = ui.TextInput(
+        label="Banner Image URL (Pinterest, Imgur, direct link)",
+        style=discord.TextStyle.short,
+        placeholder="https://... (Pinterest pin, Imgur, direct image URL)",
+        required=False,
+        max_length=500,
+    )
+    embed_thumb = ui.TextInput(
+        label="Thumbnail URL (Leave blank for user avatar)",
+        style=discord.TextStyle.short,
+        placeholder="https://... (Optional custom thumbnail)",
+        required=False,
+        max_length=500,
+    )
 
     def __init__(self, bot: "LegendBot", settings: Dict[str, Any]) -> None:
         super().__init__()
@@ -92,6 +107,8 @@ class EditWelcomeEmbedModal(ui.Modal, title="Customize Welcome Embed"):
         self.embed_title.default = settings.get("welcome_embed_title") or "Welcome to the Community!"
         self.embed_desc.default = settings.get("welcome_embed_description") or "Hey {user}, welcome!"
         self.embed_color.default = settings.get("welcome_embed_color") or "#5865F2"
+        self.embed_image.default = settings.get("welcome_image_url") or ""
+        self.embed_thumb.default = settings.get("welcome_thumbnail_url") or ""
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         updates = {}
@@ -121,6 +138,24 @@ class EditWelcomeEmbedModal(ui.Modal, title="Customize Welcome Embed"):
                 await interaction.response.send_message(embed=embed, ephemeral=True)
                 return
             updates["welcome_embed_color"] = c_val.upper()
+
+        img_val = self.embed_image.value.strip()
+        if img_val:
+            resolved_img = await resolve_image_url(img_val)
+            if not validate_url(resolved_img):
+                embed = create_error_embed("Invalid Banner URL", "Please provide a valid image link (Pinterest, Imgur, direct link, etc.).")
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            updates["welcome_image_url"] = resolved_img
+
+        thumb_val = self.embed_thumb.value.strip()
+        if thumb_val:
+            resolved_thumb = await resolve_image_url(thumb_val)
+            if not validate_url(resolved_thumb):
+                embed = create_error_embed("Invalid Thumbnail URL", "Please provide a valid image link (Pinterest, Imgur, direct link, etc.).")
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+            updates["welcome_thumbnail_url"] = resolved_thumb
 
         if updates:
             await self.bot.db.update_guild_settings(interaction.guild_id, **updates)

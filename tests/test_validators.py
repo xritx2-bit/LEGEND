@@ -1,5 +1,6 @@
 """Tests for input and template validators."""
 
+import pytest
 from src.utils.validators import (
     render_template,
     validate_hex_color,
@@ -79,4 +80,30 @@ def test_render_template() -> None:
     assert "Member #42" in rendered
     # Unmatched tokens remain intact without crashing
     assert "{unknown}" in rendered
+
+
+@pytest.mark.asyncio
+async def test_resolve_image_url_direct_and_conversions() -> None:
+    """Test resolution of various image link types."""
+    from src.utils.validators import resolve_image_url
+
+    # 1. Direct links
+    direct = "https://example.com/art.png"
+    assert await resolve_image_url(direct) == direct
+
+    # 2. Imgur page link
+    imgur_page = "https://imgur.com/aBcDeFg"
+    assert await resolve_image_url(imgur_page) == "https://i.imgur.com/aBcDeFg.png"
+
+    # 3. Google Drive view link
+    gdrive = "https://drive.google.com/file/d/1a2b3c4d5e/view?usp=sharing"
+    assert await resolve_image_url(gdrive) == "https://drive.google.com/uc?export=view&id=1a2b3c4d5e"
+
+    # 4. Pinterest direct CDN link
+    pinimg = "https://i.pinimg.com/originals/ab/cd/ef/abcdef.jpg"
+    assert await resolve_image_url(pinimg) == pinimg
+
+    # 5. Wrapped in angle brackets
+    wrapped = "<https://i.pinimg.com/736x/12/34/56/123456.png>"
+    assert await resolve_image_url(wrapped) == "https://i.pinimg.com/736x/12/34/56/123456.png"
 
