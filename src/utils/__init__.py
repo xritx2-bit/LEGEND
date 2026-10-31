@@ -1,5 +1,5 @@
 """Utilities package."""
-from src.utils.logger import setup_logger
+from src.utils.logger import register_log_secret, setup_logger
 from src.utils.permissions import NotGuildAdminError, get_safe_allowed_mentions, is_guild_admin
 from src.utils.validators import (
     render_template,

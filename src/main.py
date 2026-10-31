@@ -19,7 +19,7 @@ from discord.ext import commands
 from src.config import Config, redact_secret
 from src.database.db import DatabaseManager
 from src.ui.embeds import create_error_embed, create_warning_embed
-from src.utils.logger import setup_logger
+from src.utils.logger import register_log_secret, setup_logger
 from src.utils.permissions import NotGuildAdminError
 
 logger = logging.getLogger("LegendBot")
@@ -178,6 +178,12 @@ async def main() -> None:
     """Load configuration and start the bot event loop."""
     config = Config.load()
     setup_logger(log_level=config.log_level)
+
+    # Register credentials with the secret redaction filter
+    if config.discord_token:
+        register_log_secret(config.discord_token)
+    if config.youtube_api_key:
+        register_log_secret(config.youtube_api_key)
 
     logger.info("Starting Legend Discord Bot...")
     logger.info("Token: %s", redact_secret(config.discord_token))
