@@ -74,6 +74,11 @@ class LegendBot(commands.Bot):
         else:
             original = error
 
+        # If interaction expired before completion (Discord 3-second timeout)
+        if isinstance(original, discord.NotFound) and getattr(original, "code", None) == 10062:
+            logger.warning("Discord interaction expired (Unknown Interaction 10062).")
+            return
+
         if isinstance(original, NotGuildAdminError):
             embed = create_error_embed(
                 title="Permission Denied",
