@@ -72,3 +72,4 @@ def render_template(template: str, context: Dict[str, Any]) -> str:
         return match.group(0)  # Keep unrecognized token as-is
 
     return TEMPLATE_TOKEN_REGEX.sub(replace_token, template)
+

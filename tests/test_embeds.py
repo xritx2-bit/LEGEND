@@ -42,3 +42,4 @@ def test_create_error_embed() -> None:
     embed = create_error_embed("Failed", "Invalid input received.")
     assert "Failed" in (embed.title or "")
     assert embed.color == COLOR_ERROR
+

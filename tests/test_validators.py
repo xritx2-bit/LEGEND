@@ -79,3 +79,4 @@ def test_render_template() -> None:
     assert "Member #42" in rendered
     # Unmatched tokens remain intact without crashing
     assert "{unknown}" in rendered
+

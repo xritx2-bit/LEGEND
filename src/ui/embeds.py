@@ -81,3 +81,4 @@ def create_error_embed(
     if footer:
         embed.set_footer(text=footer)
     return embed
+
