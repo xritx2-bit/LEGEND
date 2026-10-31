@@ -29,6 +29,7 @@ INITIAL_EXTENSIONS: List[str] = [
     "src.cogs.general",
     "src.cogs.youtube",
     "src.cogs.welcome",
+    "src.cogs.setup_panel",
 ]
 
 
