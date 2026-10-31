@@ -35,3 +35,4 @@ def clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
     for key in keys:
         monkeypatch.delenv(key, raising=False)
+

@@ -88,3 +88,4 @@ class GeneralCog(commands.Cog, name="General"):
 async def setup(bot: commands.Bot) -> None:
     """Extension entry point for GeneralCog."""
     await bot.add_cog(GeneralCog(bot))
+

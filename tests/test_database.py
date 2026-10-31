@@ -67,3 +67,4 @@ async def test_broadcast_notification_tracking(test_db: DatabaseManager) -> None
         title="Duplicate Attempt",
     )
     assert await test_db.is_broadcast_notified(broadcast_id)
+

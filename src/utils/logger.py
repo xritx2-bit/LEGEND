@@ -44,3 +44,4 @@ def setup_logger(log_level: str = "INFO", log_dir: str = "logs") -> logging.Logg
         logger.warning("Could not initialize file logging handler: %s", e)
 
     return logger
+

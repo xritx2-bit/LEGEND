@@ -17,7 +17,9 @@ from discord.ext import commands
 
 from src.config import Config, redact_secret
 from src.database.db import DatabaseManager
+from src.ui.embeds import create_error_embed, create_warning_embed
 from src.utils.logger import setup_logger
+from src.utils.permissions import NotGuildAdminError
 
 logger = logging.getLogger("LegendBot")
 
@@ -53,6 +55,68 @@ class LegendBot(commands.Bot):
         )
 
         self.db = DatabaseManager(config.database_path)
+        # Register centralized application command error handler
+        self.tree.on_error = self.on_app_command_error
+
+    async def on_app_command_error(
+        self,
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        """Centralized handler for all slash command errors."""
+        # Unpack CommandInvokeError if present
+        if isinstance(error, app_commands.CommandInvokeError):
+            original = error.original
+        else:
+            original = error
+
+        if isinstance(original, NotGuildAdminError):
+            embed = create_error_embed(
+                title="Permission Denied",
+                description=str(original),
+            )
+        elif isinstance(original, app_commands.MissingPermissions):
+            missing = ", ".join(f"`{p}`" for p in original.missing_permissions)
+            embed = create_error_embed(
+                title="Missing Permissions",
+                description=f"You need the following permissions to run this command: {missing}",
+            )
+        elif isinstance(original, app_commands.BotMissingPermissions):
+            missing = ", ".join(f"`{p}`" for p in original.missing_permissions)
+            embed = create_error_embed(
+                title="Bot Permission Error",
+                description=f"I am missing necessary server permissions to run this: {missing}",
+            )
+        elif isinstance(original, app_commands.NoPrivateMessage):
+            embed = create_error_embed(
+                title="Server Only",
+                description="This command cannot be used in Direct Messages. Please run it inside a server.",
+            )
+        elif isinstance(original, app_commands.CommandOnCooldown):
+            embed = create_warning_embed(
+                title="Command on Cooldown",
+                description=f"Please wait `{original.retry_after:.1f}s` before trying again.",
+            )
+        elif isinstance(original, app_commands.CheckFailure):
+            embed = create_error_embed(
+                title="Access Denied",
+                description="You do not have permission to execute this command.",
+            )
+        else:
+            cmd_name = interaction.command.name if interaction.command else "Unknown"
+            logger.error("Unhandled slash command error in /%s: %s", cmd_name, original, exc_info=True)
+            embed = create_error_embed(
+                title="Command Execution Error",
+                description="An unexpected error occurred while executing this command. The issue has been recorded.",
+            )
+
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        except Exception as send_err:
+            logger.warning("Could not deliver error response to user: %s", send_err)
 
     async def setup_hook(self) -> None:
         """Asynchronous initialization called before login."""

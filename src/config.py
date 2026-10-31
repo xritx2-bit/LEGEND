@@ -95,3 +95,4 @@ def redact_secret(secret: str, visible_chars: int = 4) -> str:
     if len(secret) <= visible_chars:
         return "****"
     return f"{'*' * (len(secret) - visible_chars)}{secret[-visible_chars:]}"
+
