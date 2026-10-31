@@ -214,6 +214,13 @@ async def main() -> None:
             await bot.start(config.discord_token)
     except discord.LoginFailure:
         logger.critical("Failed to log in: Invalid Discord bot token.")
+    except discord.PrivilegedIntentsRequired:
+        logger.critical("=" * 60)
+        logger.critical("⚠️ PRIVILEGED INTENT REQUIRED:")
+        logger.critical("Please enable 'SERVER MEMBERS INTENT' in your Discord Developer Portal:")
+        logger.critical("https://discord.com/developers/applications/%s/bot", config.discord_client_id or "")
+        logger.critical("Scroll to 'Privileged Gateway Intents' -> Turn ON 'SERVER MEMBERS INTENT' -> Save Changes.")
+        logger.critical("=" * 60)
     except Exception as e:
         logger.critical("Unexpected error while running bot: %s", e, exc_info=True)
 

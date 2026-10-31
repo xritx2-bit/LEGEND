@@ -28,6 +28,7 @@ def _get_env_int(key: str, default: int, min_val: Optional[int] = None) -> int:
 class Config:
     """Strongly typed application configuration."""
     discord_token: str
+    discord_client_id: Optional[str]
     guild_id: Optional[int]
     youtube_api_key: str
     youtube_channel_id: str
@@ -42,6 +43,7 @@ class Config:
             load_dotenv(dotenv_path=env_path, override=True)
 
         token = os.getenv("DISCORD_BOT_TOKEN", "").strip()
+        client_id = os.getenv("DISCORD_CLIENT_ID", "").strip() or None
 
         guild_id_str = os.getenv("DISCORD_GUILD_ID", "").strip()
         guild_id = int(guild_id_str) if guild_id_str.isdigit() else None
@@ -61,6 +63,7 @@ class Config:
 
         return cls(
             discord_token=token,
+            discord_client_id=client_id,
             guild_id=guild_id,
             youtube_api_key=yt_key,
             youtube_channel_id=yt_channel,
