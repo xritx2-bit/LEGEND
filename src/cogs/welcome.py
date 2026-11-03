@@ -51,8 +51,9 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
             member.guild.id,
         )
 
-        if member.bot:
-            logger.info("Ignoring bot join event for %s (%d)", member.name, member.id)
+        # Do not welcome self if the bot itself joined
+        if getattr(self.bot, "user", None) and member.id == self.bot.user.id:
+            logger.info("Ignoring join event for self (%s)", member.name)
             return
 
         settings = await self.bot.db.get_guild_settings(member.guild.id)

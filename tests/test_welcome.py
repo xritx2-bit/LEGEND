@@ -56,16 +56,59 @@ def test_create_welcome_embed() -> None:
 
 
 @pytest.mark.asyncio
-async def test_on_member_join_ignores_bot() -> None:
-    """Verify bots joining the server do not trigger welcome messages."""
+async def test_on_member_join_ignores_self() -> None:
+    """Verify the bot does not send a welcome message to itself."""
     mock_bot = MagicMock()
+    mock_bot.user.id = 999
     mock_member = MagicMock(spec=discord.Member)
+    mock_member.id = 999
     mock_member.bot = True
 
     cog = WelcomeCog(mock_bot)
-    # on_member_join should exit immediately without accessing database
     await cog.on_member_join(mock_member)
     mock_bot.db.get_guild_settings.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_on_member_join_welcomes_bot_accounts(test_db: DatabaseManager) -> None:
+    """Verify other bots joining the server are welcomed."""
+    guild_id = 998811
+    channel_id = 776655
+
+    await test_db.update_guild_settings(
+        guild_id,
+        welcome_enabled=1,
+        welcome_channel_id=channel_id,
+        welcome_message="Welcome bot {user} to {server}!",
+    )
+
+    mock_bot = MagicMock()
+    mock_bot.user.id = 12345
+    mock_bot.db = test_db
+
+    mock_channel = MagicMock(spec=discord.TextChannel)
+    mock_channel.send = AsyncMock()
+
+    mock_guild = MagicMock(spec=discord.Guild)
+    mock_guild.id = guild_id
+    mock_guild.name = "Test Guild"
+    mock_guild.member_count = 100
+    mock_guild.get_channel.return_value = mock_channel
+
+    mock_member = MagicMock(spec=discord.Member)
+    mock_member.id = 88888  # Different bot
+    mock_member.bot = True
+    mock_member.guild = mock_guild
+    mock_member.mention = "<@88888>"
+    mock_member.display_name = "MusicBot"
+    mock_member.display_avatar.url = "https://avatar.url/musicbot.png"
+
+    cog = WelcomeCog(mock_bot)
+    await cog.on_member_join(mock_member)
+
+    mock_channel.send.assert_called_once()
+    _, kwargs = mock_channel.send.call_args
+    assert "Welcome bot <@88888> to Test Guild!" in kwargs["content"]
 
 
 @pytest.mark.asyncio
