@@ -11,21 +11,34 @@ from typing import List
 LOCK_FILE = Path("data/bot.lock")
 
 
+def _is_python_process_running(pid: int) -> bool:
+    """Check if a specific PID is an active Python process."""
+    if pid <= 0 or pid == os.getpid():
+        return False
+    try:
+        import subprocess
+        creation_flags = 0x08000000 if sys.platform == "win32" else 0
+        output = subprocess.check_output(
+            ["tasklist", "/fi", f"PID eq {pid}", "/fo", "csv", "/nh"],
+            creationflags=creation_flags,
+            text=True,
+            timeout=3,
+        )
+        return "python" in output.lower()
+    except Exception:
+        return False
+
+
 def acquire_instance_lock() -> bool:
     """Ensure only one instance of Legend Bot runs simultaneously."""
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     if LOCK_FILE.exists():
         try:
             old_pid = int(LOCK_FILE.read_text().strip())
-            if old_pid != os.getpid():
-                import ctypes
-                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-                handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, old_pid)
-                if handle:
-                    ctypes.windll.kernel32.CloseHandle(handle)
-                    return False  # Existing process is active
+            if _is_python_process_running(old_pid):
+                return False  # Another Python bot process is actively running
         except Exception:
-            pass  # Stale lock file
+            pass  # Stale or corrupted lock file
 
     try:
         LOCK_FILE.write_text(str(os.getpid()))
