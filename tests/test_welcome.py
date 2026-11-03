@@ -113,8 +113,8 @@ async def test_on_member_join_dispatches_when_enabled(test_db: DatabaseManager) 
 
 
 @pytest.mark.asyncio
-async def test_welcome_embed_with_attachments(test_db: DatabaseManager) -> None:
-    """Test /welcome embed using direct Discord attachment uploads."""
+async def test_welcome_embed_with_avatar_placeholder(test_db: DatabaseManager) -> None:
+    """Test /welcome embed using {user_avatar} placeholder and verify on_member_join renders it."""
     guild_id = 998877
 
     mock_bot = MagicMock()
@@ -128,25 +128,98 @@ async def test_welcome_embed_with_attachments(test_db: DatabaseManager) -> None:
     mock_interaction.response.defer = AsyncMock()
     mock_interaction.followup.send = AsyncMock()
 
-    # Create mock attachments
-    mock_thumb = MagicMock(spec=discord.Attachment)
-    mock_thumb.filename = "thumb.png"
-    mock_thumb.content_type = "image/png"
-    mock_thumb.url = "https://cdn.discordapp.com/attachments/1/2/thumb.png"
-
-    mock_banner = MagicMock(spec=discord.Attachment)
-    mock_banner.filename = "banner.gif"
-    mock_banner.content_type = "image/gif"
-    mock_banner.url = "https://cdn.discordapp.com/attachments/1/3/banner.gif"
-
+    # 1. Configure welcome embed with {user_avatar} and {server_banner}
     await cog.welcome_embed.callback(
         cog,
         mock_interaction,
-        thumbnail_file=mock_thumb,
-        image_file=mock_banner,
+        thumbnail="{user_avatar}",
+        image="{server_banner}",
     )
 
     settings = await test_db.get_guild_settings(guild_id)
-    assert settings["welcome_thumbnail_url"] == "https://cdn.discordapp.com/attachments/1/2/thumb.png"
-    assert settings["welcome_image_url"] == "https://cdn.discordapp.com/attachments/1/3/banner.gif"
+    assert settings["welcome_thumbnail_url"] == "{user_avatar}"
+    assert settings["welcome_image_url"] == "{server_banner}"
     mock_interaction.followup.send.assert_called_once()
+
+    # 2. Enable welcome channel and test member join rendering
+    channel_id = 555111
+    await test_db.update_guild_settings(
+        guild_id,
+        welcome_enabled=1,
+        welcome_channel_id=channel_id,
+    )
+
+    mock_channel = MagicMock(spec=discord.TextChannel)
+    mock_channel.send = AsyncMock()
+
+    mock_guild = MagicMock(spec=discord.Guild)
+    mock_guild.id = guild_id
+    mock_guild.name = "Placeholder Guild"
+    mock_guild.member_count = 150
+    mock_guild.icon.url = "https://cdn.discordapp.com/icons/guild.png"
+    mock_guild.banner.url = "https://cdn.discordapp.com/banners/guild.png"
+    mock_guild.get_channel.return_value = mock_channel
+
+    mock_member = MagicMock(spec=discord.Member)
+    mock_member.bot = False
+    mock_member.guild = mock_guild
+    mock_member.mention = "<@777>"
+    mock_member.display_name = "AvatarTester"
+    mock_member.display_avatar.url = "https://cdn.discordapp.com/avatars/777/pic.png"
+
+    await cog.on_member_join(mock_member)
+
+    mock_channel.send.assert_called_once()
+    _, kwargs = mock_channel.send.call_args
+    sent_embed: discord.Embed = kwargs["embed"]
+    assert sent_embed.thumbnail.url == "https://cdn.discordapp.com/avatars/777/pic.png"
+    assert sent_embed.image.url == "https://cdn.discordapp.com/banners/guild.png"
+
+
+@pytest.mark.asyncio
+async def test_welcome_upload_command(test_db: DatabaseManager) -> None:
+    """Test /welcome upload for direct file uploads."""
+    guild_id = 998877
+
+    mock_bot = MagicMock()
+    mock_bot.db = test_db
+
+    cog = WelcomeCog(mock_bot)
+
+    mock_interaction = MagicMock(spec=discord.Interaction)
+    mock_interaction.guild_id = guild_id
+    mock_interaction.user.name = "AdminUser"
+    mock_interaction.response.defer = AsyncMock()
+    mock_interaction.followup.send = AsyncMock()
+
+    mock_file = MagicMock(spec=discord.Attachment)
+    mock_file.filename = "uploaded.png"
+    mock_file.content_type = "image/png"
+    mock_file.url = "https://cdn.discordapp.com/attachments/100/uploaded.png"
+
+    # Upload thumbnail
+    await cog.welcome_upload.callback(
+        cog,
+        mock_interaction,
+        target="thumbnail",
+        file=mock_file,
+    )
+
+    settings = await test_db.get_guild_settings(guild_id)
+    assert settings["welcome_thumbnail_url"] == "https://cdn.discordapp.com/attachments/100/uploaded.png"
+
+    # Upload banner
+    mock_banner_file = MagicMock(spec=discord.Attachment)
+    mock_banner_file.filename = "banner.webp"
+    mock_banner_file.content_type = "image/webp"
+    mock_banner_file.url = "https://cdn.discordapp.com/attachments/200/banner.webp"
+
+    await cog.welcome_upload.callback(
+        cog,
+        mock_interaction,
+        target="banner",
+        file=mock_banner_file,
+    )
+
+    settings = await test_db.get_guild_settings(guild_id)
+    assert settings["welcome_image_url"] == "https://cdn.discordapp.com/attachments/200/banner.webp"

@@ -175,7 +175,8 @@ When started successfully, you will see output similar to:
 | `/welcome enable`  | Turns automated welcome greetings on | None |
 | `/welcome disable` | Turns automated welcome greetings off | None |
 | `/welcome message` | Customizes message text above the embed | `template` (supports variables) |
-| `/welcome embed`   | Customizes embed title, body, color, thumbnail, and banner | `title`, `description`, `color`, `thumbnail_url`, `image_url`, `footer` |
+| `/welcome embed`   | Customizes embed title, body, color, thumbnail, and banner | `title`, `description`, `color`, `thumbnail`, `image`, `footer` |
+| `/welcome upload`  | Uploads an image file directly from device for thumbnail/banner | `target` (Thumbnail/Banner), `file` (Attachment) |
 | `/welcome preview` | Displays an ephemeral preview of the welcome greeting | None |
 | `/welcome reset`   | Restores welcome settings to default values | None |
 
@@ -186,6 +187,9 @@ When started successfully, you will see output similar to:
 | `{username}` | Member's display name | Welcome Message & Embed |
 | `{server}` | Server name | Welcome Message & Embed |
 | `{count}` | Total server member count | Welcome Message & Embed |
+| `{user_avatar}` / `{avatar}` | Joining member's profile avatar URL | Welcome Thumbnail & Image |
+| `{server_icon}` / `{icon}` | Server icon URL | Welcome Thumbnail & Image |
+| `{server_banner}` / `{banner}` | Server banner image URL | Welcome Thumbnail & Image |
 | `{streamer}`| YouTube creator channel name | Live Message Template |
 | `{title}` | Livestream title | Live Message Template |
 | `{url}` | Livestream watch URL | Live Message Template |
@@ -202,7 +206,7 @@ Run the complete test suite anytime with:
 .\.venv\Scripts\pytest -v
 ```
 
-All 51 automated tests verify:
+All 55 automated tests verify:
 - SQLite persistence, concurrency, and duplicate stream prevention.
 - YouTube API response parsing and mock broadcast generation.
 - Template token validation and URL/hex color sanitization.

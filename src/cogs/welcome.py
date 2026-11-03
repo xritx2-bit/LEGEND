@@ -1,7 +1,7 @@
 """Customizable Welcome System cog, on_member_join listener, and /welcome commands."""
 
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -15,6 +15,7 @@ from src.ui.embeds import (
 )
 from src.utils.permissions import is_guild_admin
 from src.utils.validators import (
+    ALLOWED_WELCOME_PLACEHOLDERS,
     render_template,
     resolve_image_url,
     validate_hex_color,
@@ -26,8 +27,6 @@ if TYPE_CHECKING:
     from src.main import LegendBot
 
 logger = logging.getLogger("LegendBot.WelcomeCog")
-
-ALLOWED_WELCOME_PLACEHOLDERS = {"user", "username", "server", "count"}
 
 
 class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Custom welcome message and embed configuration"):
@@ -59,12 +58,24 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
             logger.warning("Configured welcome channel %s not found in %s", channel_id, member.guild.name)
             return
 
+        # Extract avatar, guild icon, and guild banner URLs
+        avatar_url = member.display_avatar.url
+        icon_url = member.guild.icon.url if member.guild.icon else avatar_url
+        banner_url = member.guild.banner.url if member.guild.banner else ""
+
         # Prepare dynamic placeholder context
         context = {
             "user": member.mention,
             "username": member.display_name,
             "server": member.guild.name,
             "count": str(member.guild.member_count or len(member.guild.members)),
+            "user_avatar": avatar_url,
+            "avatar": avatar_url,
+            "server_icon": icon_url,
+            "icon": icon_url,
+            "server_banner": banner_url,
+            "banner": banner_url,
+            "user_banner": member.banner.url if getattr(member, "banner", None) else "",
         }
 
         # Render message text and embed fields
@@ -81,10 +92,20 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
         if not valid_color or color_int is None:
             color_int = 0x5865F2
 
-        # Determine thumbnail and banner image
-        custom_thumb = settings.get("welcome_thumbnail_url")
-        thumbnail_url = custom_thumb if custom_thumb else member.display_avatar.url
-        image_url = settings.get("welcome_image_url")
+        # Determine thumbnail and banner image (supports {user_avatar}, {server_icon}, and URLs)
+        raw_thumb = settings.get("welcome_thumbnail_url")
+        if raw_thumb:
+            rendered_thumb = render_template(raw_thumb, context).strip()
+            thumbnail_url = rendered_thumb if rendered_thumb else avatar_url
+        else:
+            thumbnail_url = avatar_url
+
+        raw_image = settings.get("welcome_image_url")
+        if raw_image:
+            rendered_image = render_template(raw_image, context).strip()
+            image_url = rendered_image if rendered_image else None
+        else:
+            image_url = None
 
         embed = create_welcome_embed(
             title=title,
@@ -198,15 +219,13 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="embed", description="Customize the welcome embed appearance (title, description, color, images).")
+    @app_commands.command(name="embed", description="Customize welcome embed (title, description, color, thumbnail, banner, footer).")
     @app_commands.describe(
         title="(Optional) Embed title. Supports: {user}, {username}, {server}, {count}",
         description="(Optional) Embed body text. Supports variables",
         color="(Optional) Hex color code (e.g. #5865F2, #FF0000)",
-        thumbnail_url="(Optional) Image link (direct URL, Pinterest, Imgur, etc.)",
-        thumbnail_file="(Optional) Upload a thumbnail image file directly from your device",
-        image_url="(Optional) Banner image link (direct URL, Pinterest, Imgur, etc.)",
-        image_file="(Optional) Upload a banner image file directly from your device",
+        thumbnail="(Optional) URL, photo link, or embed variable ({user_avatar}, {server_icon})",
+        image="(Optional) Banner URL, photo link, or embed variable ({server_banner})",
         footer="(Optional) Embed footer text. Supports: {count}",
     )
     @is_guild_admin()
@@ -216,25 +235,21 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
         title: Optional[str] = None,
         description: Optional[str] = None,
         color: Optional[str] = None,
-        thumbnail_url: Optional[str] = None,
-        thumbnail_file: Optional[discord.Attachment] = None,
-        image_url: Optional[str] = None,
-        image_file: Optional[discord.Attachment] = None,
+        thumbnail: Optional[str] = None,
+        image: Optional[str] = None,
         footer: Optional[str] = None,
     ) -> None:
         """Configure welcome embed attributes."""
         await interaction.response.defer(ephemeral=True)
 
         logger.info(
-            "welcome_embed called by %s (guild: %s): title=%r, color=%r, thumb_url=%r, thumb_file=%r, img_url=%r, img_file=%r",
+            "welcome_embed called by %s (guild: %s): title=%r, color=%r, thumb=%r, img=%r",
             interaction.user.name,
             interaction.guild_id,
             title,
             color,
-            thumbnail_url,
-            thumbnail_file.filename if thumbnail_file else None,
-            image_url,
-            image_file.filename if image_file else None,
+            thumbnail,
+            image,
         )
 
         updates = {}
@@ -274,51 +289,65 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
                 return
             updates["welcome_embed_color"] = color.upper()
 
-        # Handle Thumbnail (Direct File upload takes priority over URL)
-        if thumbnail_file:
-            if thumbnail_file.content_type and not thumbnail_file.content_type.startswith("image/"):
-                embed = create_error_embed("Invalid Thumbnail File", "The uploaded thumbnail file must be an image (PNG, JPG, WEBP, GIF).")
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                return
-            updates["welcome_thumbnail_url"] = thumbnail_file.url
-        elif thumbnail_url:
-            clean_t = thumbnail_url.strip()
+        # Handle Thumbnail (accepts: {user_avatar}, {server_icon}, image links, or "none")
+        if thumbnail is not None:
+            clean_t = thumbnail.strip()
             if clean_t.lower() in {"none", "remove", "clear", "reset", "delete"}:
                 updates["welcome_thumbnail_url"] = None
+            elif any(f"{{{token}}}" in clean_t for token in ALLOWED_WELCOME_PLACEHOLDERS):
+                is_valid, inv = validate_template_placeholders(clean_t, ALLOWED_WELCOME_PLACEHOLDERS)
+                if not is_valid:
+                    embed = create_error_embed(
+                        "Invalid Thumbnail Variables",
+                        f"Unknown variables: {', '.join(inv)}\n"
+                        f"Supported variables: `{{user_avatar}}`, `{{server_icon}}`, `{{server_banner}}`",
+                    )
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    return
+                updates["welcome_thumbnail_url"] = clean_t
             else:
                 resolved_thumb = await resolve_image_url(clean_t)
                 if not validate_url(resolved_thumb):
                     embed = create_error_embed(
-                        "Invalid Thumbnail Image",
-                        "Could not parse this image link.\n\n"
-                        "💡 **2 Easy Ways to Fix This:**\n"
-                        "1. **Direct Upload (Easiest)**: Run `/welcome embed` and attach the image directly via the `thumbnail_file` option!\n"
-                        "2. **Direct Image Link**: On Pinterest or Google, right-click the image and select **'Copy image address'** (starts with `i.pinimg.com`), then paste that into `thumbnail_url`."
+                        "Invalid Thumbnail",
+                        "Could not parse this thumbnail value.\n\n"
+                        "💡 **Supported Options:**\n"
+                        "• **Embed Variables**: `{{user_avatar}}` (new member's avatar), `{{server_icon}}`\n"
+                        "• **Image Links**: Direct image URL (.png, .jpg, .webp), Pinterest link, or Discord image link\n"
+                        "• **Direct Upload**: Use `/welcome upload target:Thumbnail` to upload from your device\n"
+                        "• **Reset**: Type `none` to revert to member avatar",
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
                 updates["welcome_thumbnail_url"] = resolved_thumb
 
-        # Handle Banner Image (Direct File upload takes priority over URL)
-        if image_file:
-            if image_file.content_type and not image_file.content_type.startswith("image/"):
-                embed = create_error_embed("Invalid Banner File", "The uploaded banner file must be an image (PNG, JPG, WEBP, GIF).")
-                await interaction.followup.send(embed=embed, ephemeral=True)
-                return
-            updates["welcome_image_url"] = image_file.url
-        elif image_url:
-            clean_i = image_url.strip()
+        # Handle Banner Image (accepts: {server_banner}, {server_icon}, image links, or "none")
+        if image is not None:
+            clean_i = image.strip()
             if clean_i.lower() in {"none", "remove", "clear", "reset", "delete"}:
                 updates["welcome_image_url"] = None
+            elif any(f"{{{token}}}" in clean_i for token in ALLOWED_WELCOME_PLACEHOLDERS):
+                is_valid, inv = validate_template_placeholders(clean_i, ALLOWED_WELCOME_PLACEHOLDERS)
+                if not is_valid:
+                    embed = create_error_embed(
+                        "Invalid Banner Variables",
+                        f"Unknown variables: {', '.join(inv)}\n"
+                        f"Supported variables: `{{server_banner}}`, `{{server_icon}}`, `{{user_avatar}}`",
+                    )
+                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    return
+                updates["welcome_image_url"] = clean_i
             else:
                 resolved_img = await resolve_image_url(clean_i)
                 if not validate_url(resolved_img):
                     embed = create_error_embed(
                         "Invalid Banner Image",
-                        "Could not parse this image link.\n\n"
-                        "💡 **2 Easy Ways to Fix This:**\n"
-                        "1. **Direct Upload (Easiest)**: Run `/welcome embed` and attach the image directly via the `image_file` option!\n"
-                        "2. **Direct Image Link**: On Pinterest or Google, right-click the image and select **'Copy image address'** (starts with `i.pinimg.com`), then paste that into `image_url`."
+                        "Could not parse this banner value.\n\n"
+                        "💡 **Supported Options:**\n"
+                        "• **Embed Variables**: `{{server_banner}}`, `{{server_icon}}`\n"
+                        "• **Image Links**: Direct image URL (.png, .jpg, .webp), Pinterest link, or Discord image link\n"
+                        "• **Direct Upload**: Use `/welcome upload target:Banner` to upload from your device\n"
+                        "• **Reset**: Type `none` to remove the banner",
                     )
                     await interaction.followup.send(embed=embed, ephemeral=True)
                     return
@@ -336,16 +365,101 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
         )
         await interaction.followup.send(embed=embed, ephemeral=True)
 
+    @welcome_embed.autocomplete("thumbnail")
+    async def thumbnail_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[app_commands.Choice[str]]:
+        """Smart autocomplete suggestions for welcome embed thumbnail."""
+        choices = [
+            app_commands.Choice(name="👤 {user_avatar} - New member's profile avatar", value="{user_avatar}"),
+            app_commands.Choice(name="🏰 {server_icon} - Server icon", value="{server_icon}"),
+            app_commands.Choice(name="🚩 {server_banner} - Server banner", value="{server_banner}"),
+            app_commands.Choice(name="❌ none - Revert to member avatar", value="none"),
+        ]
+        if not current:
+            return choices
+        return [c for c in choices if current.lower() in c.name.lower() or current.lower() in c.value.lower()]
+
+    @welcome_embed.autocomplete("image")
+    async def image_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[app_commands.Choice[str]]:
+        """Smart autocomplete suggestions for welcome embed banner."""
+        choices = [
+            app_commands.Choice(name="🚩 {server_banner} - Server banner", value="{server_banner}"),
+            app_commands.Choice(name="🏰 {server_icon} - Server icon", value="{server_icon}"),
+            app_commands.Choice(name="👤 {user_avatar} - Member's avatar", value="{user_avatar}"),
+            app_commands.Choice(name="❌ none - Remove banner", value="none"),
+        ]
+        if not current:
+            return choices
+        return [c for c in choices if current.lower() in c.name.lower() or current.lower() in c.value.lower()]
+
+    @app_commands.command(name="upload", description="Upload an image file directly from your device for the thumbnail or banner.")
+    @app_commands.describe(
+        target="Choose whether to set this image as the thumbnail or banner",
+        file="Select an image file from your device (PNG, JPG, WEBP, GIF)",
+    )
+    @app_commands.choices(
+        target=[
+            app_commands.Choice(name="Thumbnail (Top-right avatar/icon)", value="thumbnail"),
+            app_commands.Choice(name="Banner (Large bottom embed image)", value="banner"),
+        ]
+    )
+    @is_guild_admin()
+    async def welcome_upload(
+        self,
+        interaction: discord.Interaction,
+        target: str,
+        file: discord.Attachment,
+    ) -> None:
+        """Upload an image file directly from device for thumbnail or banner."""
+        await interaction.response.defer(ephemeral=True)
+
+        if file.content_type and not file.content_type.startswith("image/"):
+            embed = create_error_embed(
+                "Invalid File Type",
+                "Please upload a valid image file (PNG, JPG, WEBP, or GIF).",
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        if target == "thumbnail":
+            await self.bot.db.update_guild_settings(interaction.guild_id, welcome_thumbnail_url=file.url)
+            embed = create_success_embed(
+                title="Thumbnail Uploaded",
+                description="Your uploaded image has been set as the welcome embed thumbnail.\nUse `/welcome preview` to see it in action.",
+            )
+        else:
+            await self.bot.db.update_guild_settings(interaction.guild_id, welcome_image_url=file.url)
+            embed = create_success_embed(
+                title="Banner Uploaded",
+                description="Your uploaded image has been set as the welcome embed banner.\nUse `/welcome preview` to see it in action.",
+            )
+
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
     @app_commands.command(name="preview", description="Preview what the welcome message and embed will look like.")
     async def welcome_preview(self, interaction: discord.Interaction) -> None:
         """Generate an ephemeral preview of the configured welcome greeting."""
         settings = await self.bot.db.get_guild_settings(interaction.guild_id)
+
+        avatar_url = interaction.user.display_avatar.url
+        icon_url = interaction.guild.icon.url if (interaction.guild and interaction.guild.icon) else avatar_url
+        banner_url = interaction.guild.banner.url if (interaction.guild and interaction.guild.banner) else ""
 
         context = {
             "user": interaction.user.mention,
             "username": interaction.user.display_name,
             "server": interaction.guild.name if interaction.guild else "Gaming Guild",
             "count": str(interaction.guild.member_count if interaction.guild else 100),
+            "user_avatar": avatar_url,
+            "avatar": avatar_url,
+            "server_icon": icon_url,
+            "icon": icon_url,
+            "server_banner": banner_url,
+            "banner": banner_url,
+            "user_banner": interaction.user.banner.url if getattr(interaction.user, "banner", None) else "",
         }
 
         msg_template = settings.get("welcome_message") or "Welcome to {server}, {user}!"
@@ -360,9 +474,19 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
         if not valid_color or color_int is None:
             color_int = 0x5865F2
 
-        custom_thumb = settings.get("welcome_thumbnail_url")
-        thumbnail_url = custom_thumb if custom_thumb else (interaction.user.avatar.url if interaction.user.avatar else None)
-        image_url = settings.get("welcome_image_url")
+        raw_thumb = settings.get("welcome_thumbnail_url")
+        if raw_thumb:
+            rendered_thumb = render_template(raw_thumb, context).strip()
+            thumbnail_url = rendered_thumb if rendered_thumb else avatar_url
+        else:
+            thumbnail_url = avatar_url
+
+        raw_image = settings.get("welcome_image_url")
+        if raw_image:
+            rendered_image = render_template(raw_image, context).strip()
+            image_url = rendered_image if rendered_image else None
+        else:
+            image_url = None
 
         embed = create_welcome_embed(
             title=title,

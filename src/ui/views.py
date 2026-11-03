@@ -13,6 +13,7 @@ from src.ui.embeds import (
     create_welcome_embed,
 )
 from src.utils.validators import (
+    ALLOWED_WELCOME_PLACEHOLDERS,
     render_template,
     resolve_image_url,
     validate_hex_color,
@@ -23,7 +24,7 @@ from src.utils.validators import (
 if TYPE_CHECKING:
     from src.main import LegendBot
 
-ALLOWED_WELCOME_VARS = {"user", "username", "server", "count"}
+ALLOWED_WELCOME_VARS = ALLOWED_WELCOME_PLACEHOLDERS
 ALLOWED_LIVE_VARS = {"streamer", "title", "url", "game", "role"}
 
 
@@ -86,17 +87,17 @@ class EditWelcomeEmbedModal(ui.Modal, title="Customize Welcome Embed"):
         required=False,
         max_length=7,
     )
-    embed_image = ui.TextInput(
-        label="Banner Image URL (Pinterest, Imgur, direct link)",
+    embed_thumb = ui.TextInput(
+        label="Thumbnail ({user_avatar}, {server_icon}, or link)",
         style=discord.TextStyle.short,
-        placeholder="https://... (Pinterest pin, Imgur, direct image URL)",
+        placeholder="{user_avatar} or {server_icon} or https://... (or 'none')",
         required=False,
         max_length=500,
     )
-    embed_thumb = ui.TextInput(
-        label="Thumbnail URL (Leave blank for user avatar)",
+    embed_image = ui.TextInput(
+        label="Banner Image ({server_banner} or link)",
         style=discord.TextStyle.short,
-        placeholder="https://... (Optional custom thumbnail)",
+        placeholder="{server_banner} or https://... (or 'none')",
         required=False,
         max_length=500,
     )
@@ -107,8 +108,8 @@ class EditWelcomeEmbedModal(ui.Modal, title="Customize Welcome Embed"):
         self.embed_title.default = settings.get("welcome_embed_title") or "Welcome to the Community!"
         self.embed_desc.default = settings.get("welcome_embed_description") or "Hey {user}, welcome!"
         self.embed_color.default = settings.get("welcome_embed_color") or "#5865F2"
-        self.embed_image.default = settings.get("welcome_image_url") or ""
         self.embed_thumb.default = settings.get("welcome_thumbnail_url") or ""
+        self.embed_image.default = settings.get("welcome_image_url") or ""
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         updates = {}
@@ -139,43 +140,57 @@ class EditWelcomeEmbedModal(ui.Modal, title="Customize Welcome Embed"):
                 return
             updates["welcome_embed_color"] = c_val.upper()
 
+        thumb_val = self.embed_thumb.value.strip()
+        if thumb_val:
+            if thumb_val.lower() in {"none", "remove", "clear", "reset", "delete"}:
+                updates["welcome_thumbnail_url"] = None
+            elif any(f"{{{token}}}" in thumb_val for token in ALLOWED_WELCOME_VARS):
+                is_valid, inv = validate_template_placeholders(thumb_val, ALLOWED_WELCOME_VARS)
+                if not is_valid:
+                    embed = create_error_embed("Invalid Thumbnail Variables", f"Unknown variables: {', '.join(inv)}")
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+                updates["welcome_thumbnail_url"] = thumb_val
+            else:
+                resolved_thumb = await resolve_image_url(thumb_val)
+                if not validate_url(resolved_thumb):
+                    embed = create_error_embed(
+                        "Invalid Thumbnail",
+                        "Could not parse this thumbnail value.\n\n"
+                        "💡 **Supported Options:**\n"
+                        "• **Embed Variables**: `{user_avatar}` (new member's avatar), `{server_icon}`\n"
+                        "• **Image Links**: Direct image URL (.png, .jpg, .webp), Pinterest link, or Discord image link\n"
+                        "• **Reset**: Type `none` to revert to member avatar",
+                    )
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+                updates["welcome_thumbnail_url"] = resolved_thumb
+
         img_val = self.embed_image.value.strip()
         if img_val:
             if img_val.lower() in {"none", "remove", "clear", "reset", "delete"}:
                 updates["welcome_image_url"] = None
+            elif any(f"{{{token}}}" in img_val for token in ALLOWED_WELCOME_VARS):
+                is_valid, inv = validate_template_placeholders(img_val, ALLOWED_WELCOME_VARS)
+                if not is_valid:
+                    embed = create_error_embed("Invalid Banner Variables", f"Unknown variables: {', '.join(inv)}")
+                    await interaction.response.send_message(embed=embed, ephemeral=True)
+                    return
+                updates["welcome_image_url"] = img_val
             else:
                 resolved_img = await resolve_image_url(img_val)
                 if not validate_url(resolved_img):
                     embed = create_error_embed(
                         "Invalid Banner Image",
-                        "Could not parse this image link.\n\n"
-                        "💡 **Tips:**\n"
-                        "• Use a direct image URL (.png, .jpg, .webp, .gif) or Imgur/Discord link.\n"
-                        "• For Pinterest: right-click the image and choose **'Copy image address'** (starts with `i.pinimg.com`).\n"
-                        "• Or run `/welcome embed` with `image_file` to upload your image file directly!"
+                        "Could not parse this banner value.\n\n"
+                        "💡 **Supported Options:**\n"
+                        "• **Embed Variables**: `{server_banner}`, `{server_icon}`\n"
+                        "• **Image Links**: Direct image URL (.png, .jpg, .webp), Pinterest link, or Discord image link\n"
+                        "• **Reset**: Type `none` to remove the banner",
                     )
                     await interaction.response.send_message(embed=embed, ephemeral=True)
                     return
                 updates["welcome_image_url"] = resolved_img
-
-        thumb_val = self.embed_thumb.value.strip()
-        if thumb_val:
-            if thumb_val.lower() in {"none", "remove", "clear", "reset", "delete"}:
-                updates["welcome_thumbnail_url"] = None
-            else:
-                resolved_thumb = await resolve_image_url(thumb_val)
-                if not validate_url(resolved_thumb):
-                    embed = create_error_embed(
-                        "Invalid Thumbnail Image",
-                        "Could not parse this image link.\n\n"
-                        "💡 **Tips:**\n"
-                        "• Use a direct image URL (.png, .jpg, .webp, .gif) or Imgur/Discord link.\n"
-                        "• For Pinterest: right-click the image and choose **'Copy image address'** (starts with `i.pinimg.com`).\n"
-                        "• Or run `/welcome embed` with `thumbnail_file` to upload your image file directly!"
-                    )
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                    return
-                updates["welcome_thumbnail_url"] = resolved_thumb
 
         if updates:
             await self.bot.db.update_guild_settings(interaction.guild_id, **updates)
@@ -286,9 +301,9 @@ class SetupDashboardView(ui.View):
             self.add_item(btn_preview_w)
 
         elif self.current_category == "appearance":
-            btn_color = ui.Button(label="Edit Embed Colors", style=discord.ButtonStyle.primary, emoji="🎨", custom_id="btn_app_color")
-            btn_color.callback = self.handle_edit_welcome_embed
-            self.add_item(btn_color)
+            btn_embed = ui.Button(label="Customize Welcome Embed", style=discord.ButtonStyle.primary, emoji="🎨", custom_id="btn_app_embed")
+            btn_embed.callback = self.handle_edit_welcome_embed
+            self.add_item(btn_embed)
 
         elif self.current_category == "backup":
             btn_export = ui.Button(label="Export Config (JSON)", style=discord.ButtonStyle.primary, emoji="📥", custom_id="btn_b_export")
@@ -339,14 +354,18 @@ class SetupDashboardView(ui.View):
             return embed
 
         elif self.current_category == "appearance":
+            w_thumb = settings.get("welcome_thumbnail_url") or "`{user_avatar}` *(Member Profile)*"
+            w_img = settings.get("welcome_image_url") or "*None*"
             embed = discord.Embed(
                 title="🎨 Appearance & Branding",
-                description="Customize colors and branding formats for your community embeds.",
+                description="Customize colors, thumbnail format, and banner for your community embeds.",
                 color=discord.Color.gold(),
             )
             embed.add_field(name="Welcome Color", value=f"`{settings.get('welcome_embed_color', '#5865F2')}`", inline=True)
-            embed.add_field(name="YouTube Alert Color", value="`#FF0000` *(Standard YouTube Red)*", inline=True)
-            embed.set_footer(text="Click 'Edit Embed Colors' to update theme codes.")
+            embed.add_field(name="YouTube Alert Color", value="`#FF0000` *(YouTube Red)*", inline=True)
+            embed.add_field(name="Welcome Thumbnail", value=f"{w_thumb}", inline=False)
+            embed.add_field(name="Welcome Banner", value=f"{w_img}", inline=False)
+            embed.set_footer(text="Click 'Customize Welcome Embed' to update appearance, thumbnail, and banner.")
             return embed
 
         else:  # backup

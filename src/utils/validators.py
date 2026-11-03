@@ -8,6 +8,20 @@ import aiohttp
 HEX_COLOR_REGEX = re.compile(r"^#?([A-Fa-f0-9]{6})$")
 TEMPLATE_TOKEN_REGEX = re.compile(r"\{([a-zA-Z0-9_]+)\}")
 
+ALLOWED_WELCOME_PLACEHOLDERS: Set[str] = {
+    "user",
+    "username",
+    "server",
+    "count",
+    "user_avatar",
+    "avatar",
+    "server_icon",
+    "icon",
+    "server_banner",
+    "banner",
+    "user_banner",
+}
+
 PINTEREST_IMG_REGEX = re.compile(
     r"https://i\.pinimg\.com/(?:originals|[0-9]+x)/[a-zA-Z0-9_\/.-]+",
     re.IGNORECASE,
