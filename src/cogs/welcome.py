@@ -42,20 +42,39 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
     @commands.Cog.listener()
     async def on_member_join(self, member: discord.Member) -> None:
         """Triggered automatically whenever a new user joins a Discord server."""
+        logger.info(
+            "on_member_join event received: member=%s (ID: %d, bot=%s) guild=%s (ID: %d)",
+            member.name,
+            member.id,
+            member.bot,
+            member.guild.name,
+            member.guild.id,
+        )
+
         if member.bot:
+            logger.info("Ignoring bot join event for %s (%d)", member.name, member.id)
             return
 
         settings = await self.bot.db.get_guild_settings(member.guild.id)
         if not settings.get("welcome_enabled", 0):
+            logger.info("Welcome greetings are disabled for %s", member.guild.name)
             return
 
         channel_id = settings.get("welcome_channel_id")
         if not channel_id:
+            logger.warning("No welcome_channel_id configured in guild %s", member.guild.name)
             return
 
         channel = member.guild.get_channel(channel_id)
-        if not isinstance(channel, discord.TextChannel):
-            logger.warning("Configured welcome channel %s not found in %s", channel_id, member.guild.name)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except Exception as e:
+                logger.error("Could not fetch welcome channel %s in %s: %s", channel_id, member.guild.name, e)
+                return
+
+        if not hasattr(channel, "send"):
+            logger.warning("Configured welcome channel %s in %s does not support sending messages", channel_id, member.guild.name)
             return
 
         # Extract avatar, guild icon, and guild banner URLs
@@ -124,16 +143,16 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
         )
 
         try:
-            await channel.send(
+            msg = await channel.send(
                 content=rendered_message,
                 embed=embed,
                 allowed_mentions=allowed_mentions,
             )
-            logger.info("Sent welcome message for %s in #%s (%s)", member.name, channel.name, member.guild.name)
+            logger.info("Successfully sent welcome message (ID: %d) for %s in #%s (%s)", msg.id, member.name, getattr(channel, "name", "channel"), member.guild.name)
         except discord.Forbidden:
-            logger.error("Missing permissions to send welcome message in #%s (%d)", channel.name, channel.id)
+            logger.error("Missing permissions to send welcome message in #%s (%d)", getattr(channel, "name", "channel"), channel_id)
         except Exception as e:
-            logger.error("Error sending welcome message: %s", e, exc_info=True)
+            logger.error("Error sending welcome message in #%s: %s", getattr(channel, "name", "channel"), e, exc_info=True)
 
     # -------------------------------------------------------------
     # Slash Commands (/welcome ...)
@@ -506,6 +525,127 @@ class WelcomeCog(commands.GroupCog, group_name="welcome", group_description="Cus
             embed=embed,
             ephemeral=True,
         )
+
+    @app_commands.command(name="test", description="Send a test welcome greeting to your configured welcome channel right now.")
+    @is_guild_admin()
+    async def welcome_test(self, interaction: discord.Interaction) -> None:
+        """Simulate a new member join and send a real welcome message to the welcome channel."""
+        await interaction.response.defer(ephemeral=True)
+
+        if not interaction.guild:
+            embed = create_error_embed("Server Only", "This command can only be used in a server.")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        settings = await self.bot.db.get_guild_settings(interaction.guild_id)
+        channel_id = settings.get("welcome_channel_id")
+        if not channel_id:
+            embed = create_warning_embed(
+                "Welcome Channel Not Set",
+                "Please configure a welcome channel first using `/welcome channel #channel`.",
+            )
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        channel = interaction.guild.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await self.bot.fetch_channel(channel_id)
+            except Exception as e:
+                embed = create_error_embed("Channel Error", f"Could not find or access configured welcome channel (`{channel_id}`): {e}")
+                await interaction.followup.send(embed=embed, ephemeral=True)
+                return
+
+        if not hasattr(channel, "send"):
+            embed = create_error_embed("Invalid Channel", f"<#{channel_id}> does not support sending text messages.")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+            return
+
+        # Prepare dynamic context using interaction user
+        member = interaction.user
+        avatar_url = member.display_avatar.url
+        icon_url = interaction.guild.icon.url if interaction.guild.icon else avatar_url
+        banner_url = interaction.guild.banner.url if interaction.guild.banner else ""
+
+        context = {
+            "user": member.mention,
+            "username": member.display_name,
+            "server": interaction.guild.name,
+            "count": str(interaction.guild.member_count or len(interaction.guild.members)),
+            "user_avatar": avatar_url,
+            "avatar": avatar_url,
+            "server_icon": icon_url,
+            "icon": icon_url,
+            "server_banner": banner_url,
+            "banner": banner_url,
+            "user_banner": member.banner.url if getattr(member, "banner", None) else "",
+        }
+
+        msg_template = settings.get("welcome_message") or "Welcome to {server}, {user}!"
+        rendered_message = render_template(msg_template, context)
+
+        title = render_template(settings.get("welcome_embed_title") or "Welcome to the Community!", context)
+        description = render_template(settings.get("welcome_embed_description") or "Hey {user}, welcome!", context)
+        footer = render_template(settings.get("welcome_footer") or "Member #{count}", context)
+
+        color_str = settings.get("welcome_embed_color", "#5865F2")
+        valid_color, color_int = validate_hex_color(color_str)
+        if not valid_color or color_int is None:
+            color_int = 0x5865F2
+
+        raw_thumb = settings.get("welcome_thumbnail_url")
+        if raw_thumb:
+            rendered_thumb = render_template(raw_thumb, context).strip()
+            thumbnail_url = rendered_thumb if rendered_thumb else avatar_url
+        else:
+            thumbnail_url = avatar_url
+
+        raw_image = settings.get("welcome_image_url")
+        if raw_image:
+            rendered_image = render_template(raw_image, context).strip()
+            image_url = rendered_image if rendered_image else None
+        else:
+            image_url = None
+
+        embed = create_welcome_embed(
+            title=title,
+            description=description,
+            color_int=color_int,
+            footer_text=footer,
+            thumbnail_url=thumbnail_url,
+            image_url=image_url,
+        )
+
+        allowed_mentions = discord.AllowedMentions(
+            users=[member],
+            roles=False,
+            everyone=False,
+        )
+
+        try:
+            await channel.send(
+                content=rendered_message,
+                embed=embed,
+                allowed_mentions=allowed_mentions,
+            )
+            success_embed = create_success_embed(
+                "Welcome Message Test Sent",
+                f"✅ A test welcome message and embed were successfully posted to <#{channel_id}>!\nHead over to <#{channel_id}> to view your live embed.",
+            )
+            await interaction.followup.send(embed=success_embed, ephemeral=True)
+        except discord.Forbidden:
+            error_embed = create_error_embed(
+                "Missing Permissions in Welcome Channel",
+                f"I don't have permission to send messages or embeds in <#{channel_id}>.\n"
+                f"Please ensure the bot has **View Channel**, **Send Messages**, and **Embed Links** permissions in that channel.",
+            )
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
+        except Exception as e:
+            error_embed = create_error_embed(
+                "Error Sending Test Message",
+                f"An error occurred while posting to <#{channel_id}>:\n```{e}```",
+            )
+            await interaction.followup.send(embed=error_embed, ephemeral=True)
 
     @app_commands.command(name="reset", description="Reset welcome configuration back to default settings.")
     @is_guild_admin()

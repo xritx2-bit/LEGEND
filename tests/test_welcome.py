@@ -223,3 +223,52 @@ async def test_welcome_upload_command(test_db: DatabaseManager) -> None:
 
     settings = await test_db.get_guild_settings(guild_id)
     assert settings["welcome_image_url"] == "https://cdn.discordapp.com/attachments/200/banner.webp"
+
+
+@pytest.mark.asyncio
+async def test_welcome_test_command(test_db: DatabaseManager) -> None:
+    """Test /welcome test simulates welcome greeting to configured channel."""
+    guild_id = 998877
+    channel_id = 771122
+
+    await test_db.update_guild_settings(
+        guild_id,
+        welcome_enabled=1,
+        welcome_channel_id=channel_id,
+        welcome_thumbnail_url="{user_avatar}",
+    )
+
+    mock_bot = MagicMock()
+    mock_bot.db = test_db
+
+    cog = WelcomeCog(mock_bot)
+
+    mock_channel = MagicMock(spec=discord.TextChannel)
+    mock_channel.send = AsyncMock()
+
+    mock_guild = MagicMock(spec=discord.Guild)
+    mock_guild.id = guild_id
+    mock_guild.name = "Test Server"
+    mock_guild.member_count = 50
+    mock_guild.get_channel.return_value = mock_channel
+
+    mock_user = MagicMock(spec=discord.Member)
+    mock_user.name = "TestAdmin"
+    mock_user.mention = "<@111>"
+    mock_user.display_name = "TestAdmin"
+    mock_user.display_avatar.url = "https://cdn.discordapp.com/avatars/111/admin.png"
+
+    mock_interaction = MagicMock(spec=discord.Interaction)
+    mock_interaction.guild_id = guild_id
+    mock_interaction.guild = mock_guild
+    mock_interaction.user = mock_user
+    mock_interaction.response.defer = AsyncMock()
+    mock_interaction.followup.send = AsyncMock()
+
+    await cog.welcome_test.callback(cog, mock_interaction)
+
+    mock_channel.send.assert_called_once()
+    _, kwargs = mock_channel.send.call_args
+    sent_embed: discord.Embed = kwargs["embed"]
+    assert sent_embed.thumbnail.url == "https://cdn.discordapp.com/avatars/111/admin.png"
+    mock_interaction.followup.send.assert_called_once()

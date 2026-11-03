@@ -4,8 +4,43 @@ import asyncio
 import logging
 import signal
 import sys
+import os
 from pathlib import Path
 from typing import List
+
+LOCK_FILE = Path("data/bot.lock")
+
+
+def acquire_instance_lock() -> bool:
+    """Ensure only one instance of Legend Bot runs simultaneously."""
+    LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if LOCK_FILE.exists():
+        try:
+            old_pid = int(LOCK_FILE.read_text().strip())
+            if old_pid != os.getpid():
+                import ctypes
+                PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+                handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, old_pid)
+                if handle:
+                    ctypes.windll.kernel32.CloseHandle(handle)
+                    return False  # Existing process is active
+        except Exception:
+            pass  # Stale lock file
+
+    try:
+        LOCK_FILE.write_text(str(os.getpid()))
+        return True
+    except Exception:
+        return True
+
+
+def release_instance_lock() -> None:
+    """Remove lock file on clean shutdown."""
+    try:
+        if LOCK_FILE.exists():
+            LOCK_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 # Ensure project root is in sys.path regardless of how the script is invoked
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -184,6 +219,14 @@ async def main() -> None:
     config = Config.load()
     setup_logger(log_level=config.log_level)
 
+    # Check for another running bot instance
+    if not acquire_instance_lock():
+        logger.critical("=" * 60)
+        logger.critical("⚠️ ANOTHER INSTANCE IS ALREADY RUNNING!")
+        logger.critical("A running Legend Bot process was detected. Exiting to avoid duplicate bot gateway collisions and 10062 Unknown Interaction errors.")
+        logger.critical("=" * 60)
+        sys.exit(1)
+
     # Register credentials with the secret redaction filter
     if config.discord_token:
         register_log_secret(config.discord_token)
@@ -201,6 +244,7 @@ async def main() -> None:
     except ValueError as e:
         logger.error("Configuration Error: %s", e)
         logger.error("Please create or edit your .env file based on .env.example.")
+        release_instance_lock()
         return
 
     bot = LegendBot(config)
@@ -228,6 +272,8 @@ async def main() -> None:
         logger.critical("=" * 60)
     except Exception as e:
         logger.critical("Unexpected error while running bot: %s", e, exc_info=True)
+    finally:
+        release_instance_lock()
 
 
 if __name__ == "__main__":
